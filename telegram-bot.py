@@ -20,68 +20,136 @@ def send_welcome(message):
 @bot.message_handler(commands=['stop'])
 def stop_notifications(message):
     user_id = message.from_user.id
-    if user_id in user_data:
-        user_data.pop(user_id)
-        print(f"Notifications stopped for user with id {user_id}")
-        print(user_data)
-        bot.send_message(message.chat.id, "Notifications stopped")
+
+    if user_id not in user_data or not user_data[user_id]["contract_addresses"]:
+        bot.send_message(message.chat.id, "You are not tracking any contract addresses.")
+        return
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard_items = [types.KeyboardButton(address) for address in user_data[user_id]["contract_addresses"]]
+    keyboard_items.append(types.KeyboardButton("Delete All"))
+    markup.add(*keyboard_items)
+
+    bot.send_message(message.chat.id, "Select the contract address you want to stop tracking:", reply_markup=markup)
+    bot.register_next_step_handler(message, delete_contract_address)
+
+def delete_contract_address(message):
+    user_id = message.from_user.id
+    selected_option = message.text
+
+    if selected_option == "Delete All":
+        user_data[user_id]["contract_addresses"] = []
+        user_data[user_id]["last_hashes"] = {}
+        bot.send_message(message.chat.id, "All contract addresses have been deleted.")
+    elif selected_option in user_data[user_id]["contract_addresses"]:
+        user_data[user_id]["contract_addresses"].remove(selected_option)
+        user_data[user_id]["last_hashes"].pop(selected_option, None)
+        bot.send_message(message.chat.id, f"Contract address {selected_option} has been deleted.")
     else:
-        bot.send_message(message.chat.id, "You are not receiving notifications")
+        bot.send_message(message.chat.id, "Invalid choice. Please select a valid contract address or 'Delete All'.")
+
+    bot.send_message(message.chat.id, "Keyboard removed.", reply_markup=types.ReplyKeyboardRemove())
 
 @bot.message_handler(func=lambda message: True)
 def save_contract_address(message):
     user_id = message.from_user.id
-    user_data[user_id] = {"contract_address": message.text, "message_chat_id": message.chat.id, "last_hash": None}
+    contract_address = message.text
+    # TODO: Validate contract address
+    if user_id not in user_data:
+        print("New user")
+        user_data[user_id] = {"contract_addresses": [contract_address], "message_chat_id": message.chat.id, "last_hashes": {}}
+    else:
+        print("Existing user")
+        user_data[user_id]["contract_addresses"].append(contract_address)
 
-    bot.send_message(message.chat.id, f"Contract address {user_data[user_id]['contract_address']} saved")
+    bot.send_message(message.chat.id, f"Contract address {user_data[user_id]['contract_addresses']} saved")
     print(user_data)
     if not is_running:
         thread = threading.Thread(target=handle_user_choice)
         thread.daemon = True
         thread.start()
 
-
 def handle_user_choice():
     is_running = True
 
     while len(user_data) > 0:
         print("\nChecking for new transactions...")
-        for user_id in user_data:
-            try:
+        for user_id, user_info in user_data.items():
+            # try:
                 print(f"Checking for user with id {user_id}...")
-                contract_address = user_data[user_id]["contract_address"]
-                message_chat_id = user_data[user_id]["message_chat_id"]
-                response = utils.get_last_movement(contract_address, 5)
-                if response == "Error":
-                    print("Error fetching information about the contract. Please try again.")
-                    bot.send_message(message_chat_id, "Error fetching information about the contract. Please try again.")
-                elif user_data[user_id]["last_hash"] == None:
-                    print("First time checking for transactions")
-                    user_data[user_id]["last_hash"] = response[0]["hash"]
-                elif response[0]["hash"] != user_data[user_id]["last_hash"]:
-                    print("New transaction found!")
-                    n = 0
-                    while n < len(response) and response[n]["hash"] != user_data[user_id]["last_hash"]:
-                        formatted_json = f"\t🆕*NEW TRANSACTION*🆕\n" \
-                            f"🔗 *Block Number*: {response[n]['blockNumber']}\n⏰ *Timestamp*: {response[n]['timeStamp']} seconds\n📜 *Hash*: {response[n]['hash']}\n" \
-                            f"🔑 *Nonce*: {response[n]['nonce']}\n🔗 *Block Hash*: {response[n]['blockHash']}\n" \
-                            f"🔍 *Transaction Index*: {response[n]['transactionIndex']}\n👤 *From*: {response[n]['from']}\n" \
-                            f"💰 *To*: {response[n]['to']}\n💲 *Value*: {response[n]['value']} Wei\n⛽ *Gas*: {response[n]['gas']} Wei\n" \
-                            f"💹 *Gas Price*: {response[n]['gasPrice']} Wei\n❌ *Error*: {'❌' if response[n]['isError'] == '1' else '✅'}\n" \
-                            f"🛡️ *Receipt Status*: {'✅' if response[n]['txreceipt_status'] == '1' else '❌'}\n" \
-                            f"🏦 *Contract Address*: {response[n]['contractAddress']}\n" \
-                            f"📈 *Cumulative Gas Used*: {response[n]['cumulativeGasUsed']} Wei\n⛽ *Gas Used*: {response[n]['gasUsed']} Wei\n" \
-                            f"🔒 *Confirmations*: {response[n]['confirmations']}\n🔍 *Method ID*: {response[n]['methodId']}\n" \
-                            f"📜 *Function Name*: {response[n]['functionName']}\n"
-                        # print(formatted_json)
-                        print("🆕*NEW TRANSACTION*🆕")
+                for contract_address in user_info["contract_addresses"]:
+                    last_hash = user_info["last_hashes"].get(contract_address, {})
+                    print(f"last_hash: {last_hash}")
+                    message_chat_id = user_info["message_chat_id"]
+                    response = utils.get_last_movement(contract_address, 5)
+                    if response == "Error":
+                        print("Error fetching information about the contract. Please try again.")
+                        bot.send_message(message_chat_id, "Error fetching information about the contract. Please try again.")
+                    elif last_hash == {}:
+                        print("First time checking for transactions, saving last hash, sending last transaction")
+                        user_info["last_hashes"][contract_address] = response[0]["hash"]
+                        print(user_info["last_hashes"])
+                        json_data = response[0]
+                        formatted_json = f"\t🔙LAST TRANSACTION:\n" \
+                                            f"🆔 *ID*: {json_data['_id']}\n" \
+                                            f"📈 *Type*: {json_data['type']}\n" \
+                                            f"⛽ *Base Gas Price*: {json_data['baseGasPrice']} Wei\n" \
+                                            f"✅ *Status*: {'✅' if json_data['status'] else '❌'}\n" \
+                                            f"🔄 *Transaction Index*: {json_data['i_tx']}\n" \
+                                            f"🔗 *Block Hash*: {json_data['blockHash']}\n" \
+                                            f"🧱 *Block Number*: {json_data['blockNumber']}\n" \
+                                            f"👤 *From*: {json_data['from']}\n" \
+                                            f"⛽ *Gas*: {json_data['gas']} Wei\n" \
+                                            f"💹 *Gas Price*: {json_data['gasPrice']} Wei\n" \
+                                            f"📄 *Hash*: {json_data['hash']}\n" \
+                                            f"🔀 *Input*: {json_data['input'][:10]}...\n" \
+                                            f"🔢 *Nonce*: {json_data['nonce']}\n" \
+                                            f"👛 *To*: {json_data['to']}\n" \
+                                            f"💰 *Value*: {json_data['value']} Wei\n" \
+                                            f"🕒 *Created At*: {json_data['createdAt']}\n" \
+                                            f"🕒 *Updated At*: {json_data['updatedAt']}\n" \
+                                            f"📃 *Contract Address*: {json_data['contractAddress']}\n" \
+                                            f"🏆 *Cumulative Gas Used*: {json_data['cumulativeGasUsed']} Wei\n" \
+                                            f"⛽ *Gas Used*: {json_data['gasUsed']} Wei\n" \
+                                            f"📅 *Timestamp*: {json_data['timestamp']}\n"
                         bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
-                        n += 1
-                    user_data[user_id]["last_hash"] = response[0]["hash"]
-                else:
-                    print("No new transactions found")
-            except Exception as e:
-                print(f"Error:\n{e}")
+                    elif response[0]["hash"] != last_hash:
+                        print("New transaction found!")
+                        bot.send_message(message_chat_id, f"🔔 New transaction found for contract address {contract_address}!")
+                        n = 0
+                        while n < len(response) and response[n]["hash"] != last_hash:
+                            json_data = response[n]
+                            formatted_json = f"\t🆕*NEW TRANSACTION*🆕\n" \
+                                            f"🆔 *ID*: {json_data['_id']}\n" \
+                                            f"📈 *Type*: {json_data['type']}\n" \
+                                            f"⛽ *Base Gas Price*: {json_data['baseGasPrice']} Wei\n" \
+                                            f"✅ *Status*: {'✅' if json_data['status'] else '❌'}\n" \
+                                            f"🔄 *Transaction Index*: {json_data['i_tx']}\n" \
+                                            f"🔗 *Block Hash*: {json_data['blockHash']}\n" \
+                                            f"🧱 *Block Number*: {json_data['blockNumber']}\n" \
+                                            f"👤 *From*: {json_data['from']}\n" \
+                                            f"⛽ *Gas*: {json_data['gas']} Wei\n" \
+                                            f"💹 *Gas Price*: {json_data['gasPrice']} Wei\n" \
+                                            f"📄 *Hash*: {json_data['hash']}\n" \
+                                            f"🔀 *Input*: {json_data['input'][:10]}...\n" \
+                                            f"🔢 *Nonce*: {json_data['nonce']}\n" \
+                                            f"👛 *To*: {json_data['to']}\n" \
+                                            f"💰 *Value*: {json_data['value']} Wei\n" \
+                                            f"🕒 *Created At*: {json_data['createdAt']}\n" \
+                                            f"🕒 *Updated At*: {json_data['updatedAt']}\n" \
+                                            f"📃 *Contract Address*: {json_data['contractAddress']}\n" \
+                                            f"🏆 *Cumulative Gas Used*: {json_data['cumulativeGasUsed']} Wei\n" \
+                                            f"⛽ *Gas Used*: {json_data['gasUsed']} Wei\n" \
+                                            f"📅 *Timestamp*: {json_data['timestamp']}\n"
+                            print("🆕*NEW TRANSACTION*🆕")
+                            bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
+                            n += 1
+                        user_info["last_hashes"][contract_address] = response[0]["hash"]
+                    else:
+                        print(f"No new transactions found for {contract_address}")
+            # except Exception as e:
+            #     print(f"Error:\n{e}")
+            #     print(f"Error trace: {traceback.format_exc()}")
             
         print("Sleeping for 5 seconds")
         time.sleep(5)
