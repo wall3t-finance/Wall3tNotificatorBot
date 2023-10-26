@@ -78,16 +78,17 @@ def handle_user_choice():
             # try:
                 print(f"Checking for user with id {user_id}...")
                 for contract_address in user_info["contract_addresses"]:
-                    contract_data = user_info["last_hashes"].get(contract_address, {})
+                    last_hash = user_info["last_hashes"].get(contract_address, {})
+                    print(f"last_hash: {last_hash}")
                     message_chat_id = user_info["message_chat_id"]
-
                     response = utils.get_last_movement(contract_address, 5)
                     if response == "Error":
                         print("Error fetching information about the contract. Please try again.")
                         bot.send_message(message_chat_id, "Error fetching information about the contract. Please try again.")
-                    elif "last_hashes" not in contract_data:
+                    elif last_hash == {}:
                         print("First time checking for transactions, saving last hash, sending last transaction")
                         user_info["last_hashes"][contract_address] = response[0]["hash"]
+                        print(user_info["last_hashes"])
                         json_data = response[0]
                         formatted_json = f"\t🔙LAST TRANSACTION:\n" \
                                             f"🆔 *ID*: {json_data['_id']}\n" \
@@ -112,11 +113,12 @@ def handle_user_choice():
                                             f"⛽ *Gas Used*: {json_data['gasUsed']} Wei\n" \
                                             f"📅 *Timestamp*: {json_data['timestamp']}\n"
                         bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
-                    elif response[0]["hash"] != user_info["last_hashes"][contract_address]:
+                    elif response[0]["hash"] != last_hash:
                         print("New transaction found!")
                         bot.send_message(message_chat_id, f"🔔 New transaction found for contract address {contract_address}!")
                         n = 0
-                        while n < len(response) and response[n]["hash"] != contract_data["last_hash"]:
+                        while n < len(response) and response[n]["hash"] != last_hash:
+                            json_data = response[n]
                             formatted_json = f"\t🆕*NEW TRANSACTION*🆕\n" \
                                             f"🆔 *ID*: {json_data['_id']}\n" \
                                             f"📈 *Type*: {json_data['type']}\n" \
@@ -142,8 +144,7 @@ def handle_user_choice():
                             print("🆕*NEW TRANSACTION*🆕")
                             bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
                             n += 1
-                        contract_data["last_hash"] = response[0]["hash"]
-                        user_info["last_hashes"][contract_address] = contract_data
+                        user_info["last_hashes"][contract_address] = response[0]["hash"]
                     else:
                         print(f"No new transactions found for {contract_address}")
             # except Exception as e:
