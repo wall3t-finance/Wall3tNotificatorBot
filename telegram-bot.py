@@ -54,6 +54,7 @@ def delete_contract_address(message):
 def save_contract_address(message):
     user_id = message.from_user.id
     contract_address = message.text
+    # TODO: Validate contract address
     if user_id not in user_data:
         print("New user")
         user_data[user_id] = {"contract_addresses": [contract_address], "message_chat_id": message.chat.id, "last_hashes": {}}
@@ -61,7 +62,7 @@ def save_contract_address(message):
         print("Existing user")
         user_data[user_id]["contract_addresses"].append(contract_address)
 
-    bot.send_message(message.chat.id, f"Contract address {user_data[user_id]['contract_address']} saved")
+    bot.send_message(message.chat.id, f"Contract address {user_data[user_id]['contract_addresses']} saved")
     print(user_data)
     if not is_running:
         thread = threading.Thread(target=handle_user_choice)
@@ -74,7 +75,7 @@ def handle_user_choice():
     while len(user_data) > 0:
         print("\nChecking for new transactions...")
         for user_id, user_info in user_data.items():
-            try:
+            # try:
                 print(f"Checking for user with id {user_id}...")
                 for contract_address in user_info["contract_addresses"]:
                     contract_data = user_info["last_hashes"].get(contract_address, {})
@@ -84,24 +85,60 @@ def handle_user_choice():
                     if response == "Error":
                         print("Error fetching information about the contract. Please try again.")
                         bot.send_message(message_chat_id, "Error fetching information about the contract. Please try again.")
-                    elif "last_hash" not in contract_data:
-                        print("First time checking for transactions")
-                        contract_data["last_hash"] = response[0]["hash"]
-                    elif response[0]["hash"] != contract_data["last_hash"]:
+                    elif "last_hashes" not in contract_data:
+                        print("First time checking for transactions, saving last hash, sending last transaction")
+                        user_info["last_hashes"][contract_address] = response[0]["hash"]
+                        json_data = response[0]
+                        formatted_json = f"\t🔙LAST TRANSACTION:\n" \
+                                            f"🆔 *ID*: {json_data['_id']}\n" \
+                                            f"📈 *Type*: {json_data['type']}\n" \
+                                            f"⛽ *Base Gas Price*: {json_data['baseGasPrice']} Wei\n" \
+                                            f"✅ *Status*: {'✅' if json_data['status'] else '❌'}\n" \
+                                            f"🔄 *Transaction Index*: {json_data['i_tx']}\n" \
+                                            f"🔗 *Block Hash*: {json_data['blockHash']}\n" \
+                                            f"🧱 *Block Number*: {json_data['blockNumber']}\n" \
+                                            f"👤 *From*: {json_data['from']}\n" \
+                                            f"⛽ *Gas*: {json_data['gas']} Wei\n" \
+                                            f"💹 *Gas Price*: {json_data['gasPrice']} Wei\n" \
+                                            f"📄 *Hash*: {json_data['hash']}\n" \
+                                            f"🔀 *Input*: {json_data['input'][:10]}...\n" \
+                                            f"🔢 *Nonce*: {json_data['nonce']}\n" \
+                                            f"👛 *To*: {json_data['to']}\n" \
+                                            f"💰 *Value*: {json_data['value']} Wei\n" \
+                                            f"🕒 *Created At*: {json_data['createdAt']}\n" \
+                                            f"🕒 *Updated At*: {json_data['updatedAt']}\n" \
+                                            f"📃 *Contract Address*: {json_data['contractAddress']}\n" \
+                                            f"🏆 *Cumulative Gas Used*: {json_data['cumulativeGasUsed']} Wei\n" \
+                                            f"⛽ *Gas Used*: {json_data['gasUsed']} Wei\n" \
+                                            f"📅 *Timestamp*: {json_data['timestamp']}\n"
+                        bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
+                    elif response[0]["hash"] != user_info["last_hashes"][contract_address]:
                         print("New transaction found!")
+                        bot.send_message(message_chat_id, f"🔔 New transaction found for contract address {contract_address}!")
                         n = 0
                         while n < len(response) and response[n]["hash"] != contract_data["last_hash"]:
                             formatted_json = f"\t🆕*NEW TRANSACTION*🆕\n" \
-                                f"🔗 *Block Number*: {response[n]['blockNumber']}\n⏰ *Timestamp*: {response[n]['timeStamp']} seconds\n📜 *Hash*: {response[n]['hash']}\n" \
-                                f"🔑 *Nonce*: {response[n]['nonce']}\n🔗 *Block Hash*: {response[n]['blockHash']}\n" \
-                                f"🔍 *Transaction Index*: {response[n]['transactionIndex']}\n👤 *From*: {response[n]['from']}\n" \
-                                f"💰 *To*: {response[n]['to']}\n💲 *Value*: {response[n]['value']} Wei\n⛽ *Gas*: {response[n]['gas']} Wei\n" \
-                                f"💹 *Gas Price*: {response[n]['gasPrice']} Wei\n❌ *Error*: {'❌' if response[n]['isError'] == '1' else '✅'}\n" \
-                                f"🛡️ *Receipt Status*: {'✅' if response[n]['txreceipt_status'] == '1' else '❌'}\n" \
-                                f"🏦 *Contract Address*: {response[n]['contractAddress']}\n" \
-                                f"📈 *Cumulative Gas Used*: {response[n]['cumulativeGasUsed']} Wei\n⛽ *Gas Used*: {response[n]['gasUsed']} Wei\n" \
-                                f"🔒 *Confirmations*: {response[n]['confirmations']}\n🔍 *Method ID*: {response[n]['methodId']}\n" \
-                                f"📜 *Function Name*: {response[n]['functionName']}\n"
+                                            f"🆔 *ID*: {json_data['_id']}\n" \
+                                            f"📈 *Type*: {json_data['type']}\n" \
+                                            f"⛽ *Base Gas Price*: {json_data['baseGasPrice']} Wei\n" \
+                                            f"✅ *Status*: {'✅' if json_data['status'] else '❌'}\n" \
+                                            f"🔄 *Transaction Index*: {json_data['i_tx']}\n" \
+                                            f"🔗 *Block Hash*: {json_data['blockHash']}\n" \
+                                            f"🧱 *Block Number*: {json_data['blockNumber']}\n" \
+                                            f"👤 *From*: {json_data['from']}\n" \
+                                            f"⛽ *Gas*: {json_data['gas']} Wei\n" \
+                                            f"💹 *Gas Price*: {json_data['gasPrice']} Wei\n" \
+                                            f"📄 *Hash*: {json_data['hash']}\n" \
+                                            f"🔀 *Input*: {json_data['input'][:10]}...\n" \
+                                            f"🔢 *Nonce*: {json_data['nonce']}\n" \
+                                            f"👛 *To*: {json_data['to']}\n" \
+                                            f"💰 *Value*: {json_data['value']} Wei\n" \
+                                            f"🕒 *Created At*: {json_data['createdAt']}\n" \
+                                            f"🕒 *Updated At*: {json_data['updatedAt']}\n" \
+                                            f"📃 *Contract Address*: {json_data['contractAddress']}\n" \
+                                            f"🏆 *Cumulative Gas Used*: {json_data['cumulativeGasUsed']} Wei\n" \
+                                            f"⛽ *Gas Used*: {json_data['gasUsed']} Wei\n" \
+                                            f"📅 *Timestamp*: {json_data['timestamp']}\n"
                             print("🆕*NEW TRANSACTION*🆕")
                             bot.send_message(message_chat_id, formatted_json, parse_mode="Markdown")
                             n += 1
@@ -109,8 +146,9 @@ def handle_user_choice():
                         user_info["last_hashes"][contract_address] = contract_data
                     else:
                         print(f"No new transactions found for {contract_address}")
-            except Exception as e:
-                print(f"Error:\n{e}")
+            # except Exception as e:
+            #     print(f"Error:\n{e}")
+            #     print(f"Error trace: {traceback.format_exc()}")
             
         print("Sleeping for 5 seconds")
         time.sleep(5)
