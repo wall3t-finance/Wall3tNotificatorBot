@@ -24,29 +24,33 @@ def get_last_movement(contract_address: str, num_transactions = 10) -> dict:
     num_transactions:int - Number of transactions to fetch (default: 10)
     Return:dict - JSON data
     """
-    load_dotenv("access-token.env")
-    
-    url = "https://api-sepolia.etherscan.io/api"
-    params = {
-        "module": "account",
-        "action": "txlist",
-        "address": contract_address,
-        "startblock": 0,  # Replace with your start block number
-        "endblock": 99999999,  # Replace with your end block number
-        "page": 1,  # Page number (1 for the first page)
-        "offset": num_transactions,
-        "sort": "desc",  # Sort by descending to get the latest transactions
-        "apikey": os.getenv("ETHERSCAN-API-KEY")
+    headers = {
+    'authority': 'apothem.xinfinscan.com',
+    'accept': 'application/json, text/plain, */*',
+    'access-control-allow-origin': '*',
     }
 
-    response = requests.get(url, params=params)
+    params = {
+        'page': '1',
+        'limit': '20',
+        'tx_type': 'all',
+    }
+
+    url = f"https://apothem.xinfinscan.com/api/txs/listByAccount/{contract_address}"
+
+    response = requests.get(
+        url=url,
+        params=params,
+        headers=headers,
+    )
 
     if response.status_code == 200:
         data = response.json()
-        if "result" in data:
-            return data["result"]
+        if len(data["items"]) > 0:
+            return data["items"]
         else:
             print("No transaction data found.")
+            return data
     else:
         print("Failed to fetch data. Check your API key and request parameters.")
 
